@@ -15,6 +15,8 @@
   "license": "ISC",
   "type": "module",
   "devDependencies": {
+  },
+  "dependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.10",
@@ -41,7 +43,5 @@
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "zod": "^4.6.1"
-  },
-  "dependencies": {
   }
 }
