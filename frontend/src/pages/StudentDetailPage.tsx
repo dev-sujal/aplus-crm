@@ -53,6 +53,7 @@ const enrollSchema = z.object({
   course: z
     .string()
     .regex(/^[a-f\d]{24}$/i, "Select a valid course"),
+  enrollmentFee: z.coerce.number().min(0, "Fee must be 0 or more"),
   batch: z.string().optional().default(""),
 })
 type EnrollInput = z.input<typeof enrollSchema>
@@ -103,7 +104,8 @@ function formatPaymentMode(mode: string) {
 
 function getEnrollmentId(fee: Fee): string {
   const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
-  return enrollment && typeof enrollment === "object" ? enrollment.id : ""
+  if (!enrollment || typeof enrollment !== "object") return ""
+  return enrollment.id || (enrollment as { _id?: string })._id || ""
 }
 
 function getCourseId(course: Course): string {
@@ -277,14 +279,19 @@ export default function StudentDetailPage() {
     },
   })
 
-  const { control, register, handleSubmit, reset } = useForm<EnrollInput, unknown, EnrollValues>({
+  const { control, register, handleSubmit, reset, setValue } = useForm<EnrollInput, unknown, EnrollValues>({
     resolver: zodResolver(enrollSchema),
-    defaultValues: { course: "", batch: "" },
+    defaultValues: { course: "", enrollmentFee: 0, batch: "" },
   })
 
   const enroll = useMutation({
     mutationFn: (values: EnrollValues) =>
-      api.post("/enrollments", { student: studentId, course: values.course, batch: values.batch }),
+      api.post("/enrollments", {
+        student: studentId,
+        course: values.course,
+        enrollmentFee: values.enrollmentFee,
+        batch: values.batch,
+      }),
     onSuccess: () => {
       toast.success("Student enrolled")
       queryClient.invalidateQueries({ queryKey: ["student", studentId] })
@@ -379,7 +386,11 @@ export default function StudentDetailPage() {
                             id="course"
                             className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                             value={field.value}
-                            onChange={field.onChange}
+                            onChange={(event) => {
+                              field.onChange(event)
+                              const selectedCourse = activeCourses?.items.find((course) => getCourseId(course) === event.target.value)
+                              setValue("enrollmentFee", selectedCourse?.fee ?? 0, { shouldValidate: true })
+                            }}
                           >
                             <option value="">Select a course…</option>
                             {activeCourses?.items.map((c) => {
@@ -393,6 +404,20 @@ export default function StudentDetailPage() {
                           </select>
                         )}
                       />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="enrollmentFee">Enrollment fee</Label>
+                      <input
+                        id="enrollmentFee"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                        {...register("enrollmentFee", { valueAsNumber: true })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave the course price here to charge the default amount, or change it for this student only.
+                      </p>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label htmlFor="batch">Batch (optional)</Label>
@@ -538,8 +563,9 @@ export default function StudentDetailPage() {
                         const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
                         const course = enrollment?.course as EnrollmentCourseRef | undefined
                         const enrollmentId = getEnrollmentId(fee)
+                        if (!enrollmentId) return null
                         return (
-                          <option key={fee.id} value={enrollmentId}>
+                          <option key={enrollmentId} value={enrollmentId}>
                             {course?.title ?? "Course"} - Remaining {formatCurrency(fee.amountRemaining)}
                           </option>
                         )
@@ -608,7 +634,7 @@ export default function StudentDetailPage() {
             fees.map((fee) => {
               const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
               const course = enrollment?.course as EnrollmentCourseRef | undefined
-              const enrollmentId = (enrollment as Enrollment | null)?.id
+              const enrollmentId = enrollment ? enrollment.id || (enrollment as { _id?: string })._id || "" : ""
               return (
                 <Card key={fee.id}>
                   <CardHeader className="flex-row items-center justify-between">

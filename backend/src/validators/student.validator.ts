@@ -41,6 +41,7 @@ export const studentIdParamSchema = z.object({
 export const createEnrollmentSchema = z.object({
   student: objectIdString,
   course: objectIdString,
+  enrollmentFee: z.number().min(0, "Enrollment fee must be 0 or more").optional(),
   batch: z.string().optional().default(""),
   registrationDate: dateLike,
 });
