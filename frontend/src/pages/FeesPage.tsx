@@ -8,12 +8,6 @@ function formatCurrency(n: number) {
   return `₹${n.toLocaleString("en-IN")}`
 }
 
-function formatPaymentMode(mode: string) {
-  if (mode === "online") return "Online"
-  if (mode === "offline") return "Offline"
-  return mode.replace(/_/g, " ")
-}
-
 function getStudentId(student: EnrollmentStudentRef): string {
   const fallbackId = (student as unknown as { _id?: string })._id
   return student.id || fallbackId || ""
@@ -24,8 +18,6 @@ export default function FeesPage() {
     queryKey: ["fees-summary"],
     queryFn: () => api.get<FeeSummary>("/fees/summary"),
   })
-
-  const recentPayments = data?.recentPayments ?? []
 
   return (
     <div className="flex flex-col gap-6">
@@ -104,47 +96,6 @@ export default function FeesPage() {
                   </div>
                 )
               })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent payments</CardTitle>
-          <CardDescription>Latest fees collected across all students.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : !recentPayments.length ? (
-            <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
-          ) : (
-            <div className="flex flex-col divide-y divide-border">
-              {recentPayments.map((payment) => (
-                <div
-                  key={payment.id}
-                  className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {payment.studentName ? (
-                        <Link to={`/students/${payment.studentId}`} className="hover:underline">
-                          {payment.studentName}
-                        </Link>
-                      ) : (
-                        "Unknown student"
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {payment.courseName || "Unknown course"} · {payment.date.slice(0, 10)} · {formatPaymentMode(payment.mode)}
-                      {payment.receiptNo && ` · #${payment.receiptNo}`}
-                    </p>
-                    {payment.note && <p className="text-xs text-muted-foreground">{payment.note}</p>}
-                  </div>
-                  <span className="text-sm font-medium">{formatCurrency(payment.amount)}</span>
-                </div>
-              ))}
             </div>
           )}
         </CardContent>

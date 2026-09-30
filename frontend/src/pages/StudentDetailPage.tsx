@@ -53,7 +53,6 @@ const enrollSchema = z.object({
   course: z
     .string()
     .regex(/^[a-f\d]{24}$/i, "Select a valid course"),
-  enrollmentFee: z.coerce.number().min(0, "Fee must be 0 or more"),
   batch: z.string().optional().default(""),
 })
 type EnrollInput = z.input<typeof enrollSchema>
@@ -61,22 +60,12 @@ type EnrollValues = z.output<typeof enrollSchema>
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive("Enter an amount greater than 0"),
-  mode: z.enum(["cash", "upi", "card", "bank_transfer", "other", "online", "offline"]).default("cash"),
+  mode: z.enum(["cash", "upi", "card", "bank_transfer", "other"]).default("cash"),
   note: z.string().optional().default(""),
   receiptNo: z.string().optional().default(""),
 })
 type PaymentInput = z.input<typeof paymentSchema>
 type PaymentValues = z.output<typeof paymentSchema>
-
-const studentFeePaymentSchema = z.object({
-  enrollmentId: z.string().min(1, "Select a course fee"),
-  amount: z.coerce.number().positive("Enter an amount greater than 0"),
-  mode: z.enum(["cash", "upi", "card", "bank_transfer", "other", "online", "offline"]).default("cash"),
-  note: z.string().optional().default(""),
-  receiptNo: z.string().optional().default(""),
-})
-type StudentFeePaymentInput = z.input<typeof studentFeePaymentSchema>
-type StudentFeePaymentValues = z.output<typeof studentFeePaymentSchema>
 
 const certificateSchema = z.object({
   completionDate: z.string().optional().default(""),
@@ -94,18 +83,6 @@ interface StudentCertificateRow {
 
 function formatCurrency(n: number) {
   return `₹${n.toLocaleString("en-IN")}`
-}
-
-function formatPaymentMode(mode: string) {
-  if (mode === "online") return "Online"
-  if (mode === "offline") return "Offline"
-  return mode.replace(/_/g, " ")
-}
-
-function getEnrollmentId(fee: Fee): string {
-  const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
-  if (!enrollment || typeof enrollment !== "object") return ""
-  return enrollment.id || (enrollment as { _id?: string })._id || ""
 }
 
 function getCourseId(course: Course): string {
@@ -171,18 +148,6 @@ export default function StudentDetailPage() {
     enabled: Boolean(studentId) && tab === "fees" && canManageFees,
   })
 
-  const feeSummary = React.useMemo(() => {
-    const items = fees ?? []
-    return {
-      totalFee: items.reduce((sum, fee) => sum + fee.totalFee, 0),
-      amountPaid: items.reduce((sum, fee) => sum + fee.amountPaid, 0),
-      amountRemaining: items.reduce((sum, fee) => sum + fee.amountRemaining, 0),
-      paymentCount: items.reduce((sum, fee) => sum + fee.payments.length, 0),
-    }
-  }, [fees])
-
-  const [selectedEnrollmentId, setSelectedEnrollmentId] = React.useState("")
-
   const {
     register: registerPayment,
     handleSubmit: handlePaymentSubmit,
@@ -193,52 +158,14 @@ export default function StudentDetailPage() {
     defaultValues: { amount: undefined, mode: "cash", note: "", receiptNo: "" },
   })
 
-  const {
-    register: registerFeePayment,
-    handleSubmit: handleFeePaymentSubmit,
-    reset: resetFeePayment,
-    formState: { isSubmitting: isSubmittingFeePayment },
-  } = useForm<StudentFeePaymentInput, unknown, StudentFeePaymentValues>({
-    resolver: zodResolver(studentFeePaymentSchema),
-    defaultValues: { enrollmentId: "", amount: undefined, mode: "offline", note: "", receiptNo: "" },
-  })
-
-  React.useEffect(() => {
-    if (!fees?.length) return
-    if (!selectedEnrollmentId || !fees.some((fee) => getEnrollmentId(fee) === selectedEnrollmentId)) {
-      setSelectedEnrollmentId(getEnrollmentId(fees[0]))
-    }
-  }, [fees, selectedEnrollmentId])
-
   const addPayment = useMutation({
     mutationFn: ({ enrollmentId, values }: { enrollmentId: string; values: PaymentValues }) =>
       api.post(`/fees/${enrollmentId}/payments`, values),
     onSuccess: () => {
       toast.success("Payment recorded")
       queryClient.invalidateQueries({ queryKey: ["student-fees", studentId] })
-      queryClient.invalidateQueries({ queryKey: ["fees-summary"] })
       setPaymentDialogFeeId(null)
       resetPayment()
-    },
-    onError: (err) => {
-      toast.error(err instanceof ApiRequestError ? err.message : "Failed to record payment")
-    },
-  })
-
-  const addStudentPayment = useMutation({
-    mutationFn: ({ enrollmentId, values }: { enrollmentId: string; values: Omit<StudentFeePaymentValues, "enrollmentId"> }) =>
-      api.post(`/fees/${enrollmentId}/payments`, values),
-    onSuccess: () => {
-      toast.success("Payment recorded")
-      queryClient.invalidateQueries({ queryKey: ["student-fees", studentId] })
-      queryClient.invalidateQueries({ queryKey: ["fees-summary"] })
-      resetFeePayment({
-        enrollmentId: selectedEnrollmentId,
-        amount: undefined,
-        mode: "offline",
-        note: "",
-        receiptNo: "",
-      })
     },
     onError: (err) => {
       toast.error(err instanceof ApiRequestError ? err.message : "Failed to record payment")
@@ -279,19 +206,14 @@ export default function StudentDetailPage() {
     },
   })
 
-  const { control, register, handleSubmit, reset, setValue } = useForm<EnrollInput, unknown, EnrollValues>({
+  const { control, register, handleSubmit, reset } = useForm<EnrollInput, unknown, EnrollValues>({
     resolver: zodResolver(enrollSchema),
-    defaultValues: { course: "", enrollmentFee: 0, batch: "" },
+    defaultValues: { course: "", batch: "" },
   })
 
   const enroll = useMutation({
     mutationFn: (values: EnrollValues) =>
-      api.post("/enrollments", {
-        student: studentId,
-        course: values.course,
-        enrollmentFee: values.enrollmentFee,
-        batch: values.batch,
-      }),
+      api.post("/enrollments", { student: studentId, course: values.course, batch: values.batch }),
     onSuccess: () => {
       toast.success("Student enrolled")
       queryClient.invalidateQueries({ queryKey: ["student", studentId] })
@@ -386,11 +308,7 @@ export default function StudentDetailPage() {
                             id="course"
                             className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                             value={field.value}
-                            onChange={(event) => {
-                              field.onChange(event)
-                              const selectedCourse = activeCourses?.items.find((course) => getCourseId(course) === event.target.value)
-                              setValue("enrollmentFee", selectedCourse?.fee ?? 0, { shouldValidate: true })
-                            }}
+                            onChange={field.onChange}
                           >
                             <option value="">Select a course…</option>
                             {activeCourses?.items.map((c) => {
@@ -404,20 +322,6 @@ export default function StudentDetailPage() {
                           </select>
                         )}
                       />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="enrollmentFee">Enrollment fee</Label>
-                      <input
-                        id="enrollmentFee"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                        {...register("enrollmentFee", { valueAsNumber: true })}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Leave the course price here to charge the default amount, or change it for this student only.
-                      </p>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label htmlFor="batch">Batch (optional)</Label>
@@ -517,113 +421,6 @@ export default function StudentDetailPage() {
 
       {tab === "fees" && canManageFees && (
         <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <SummaryStat label="Total fees" value={formatCurrency(feeSummary.totalFee)} />
-            <SummaryStat label="Paid" value={formatCurrency(feeSummary.amountPaid)} />
-            <SummaryStat label="Remaining" value={formatCurrency(feeSummary.amountRemaining)} />
-            <SummaryStat label="Payments" value={feeSummary.paymentCount} />
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Add fee payment</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!fees?.length ? (
-                <p className="text-sm text-muted-foreground">Enroll the student in a course first.</p>
-              ) : (
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-2"
-                  onSubmit={handleFeePaymentSubmit((values) =>
-                    addStudentPayment.mutate({
-                      enrollmentId: values.enrollmentId,
-                      values: {
-                        amount: values.amount,
-                        mode: values.mode,
-                        note: values.note,
-                        receiptNo: values.receiptNo,
-                      },
-                    })
-                  )}
-                  noValidate
-                >
-                  <div className="flex flex-col gap-1.5 md:col-span-2">
-                    <Label htmlFor="enrollmentId">Course fee</Label>
-                    <select
-                      id="enrollmentId"
-                      key={selectedEnrollmentId || "empty"}
-                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                      defaultValue={selectedEnrollmentId}
-                      {...registerFeePayment("enrollmentId", {
-                        onChange: (event) => setSelectedEnrollmentId(event.target.value),
-                      })}
-                    >
-                      <option value="">Select a course…</option>
-                      {fees.map((fee) => {
-                        const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
-                        const course = enrollment?.course as EnrollmentCourseRef | undefined
-                        const enrollmentId = getEnrollmentId(fee)
-                        if (!enrollmentId) return null
-                        return (
-                          <option key={enrollmentId} value={enrollmentId}>
-                            {course?.title ?? "Course"} - Remaining {formatCurrency(fee.amountRemaining)}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="feeAmount">Amount</Label>
-                    <input
-                      id="feeAmount"
-                      type="number"
-                      step="0.01"
-                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                      {...registerFeePayment("amount")}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="feeMode">Payment type</Label>
-                    <select
-                      id="feeMode"
-                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                      {...registerFeePayment("mode")}
-                    >
-                      <option value="offline">Offline</option>
-                      <option value="online">Online</option>
-                      <option value="cash">Cash</option>
-                      <option value="upi">UPI</option>
-                      <option value="card">Card</option>
-                      <option value="bank_transfer">Bank transfer</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="feeReceiptNo">Receipt no.</Label>
-                    <input
-                      id="feeReceiptNo"
-                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                      {...registerFeePayment("receiptNo")}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5 md:col-span-2">
-                    <Label htmlFor="feeNote">Note (optional)</Label>
-                    <input
-                      id="feeNote"
-                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                      {...registerFeePayment("note")}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Button type="submit" disabled={isSubmittingFeePayment || addStudentPayment.isPending}>
-                      {addStudentPayment.isPending ? "Saving…" : "Add payment"}
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </CardContent>
-          </Card>
-
           {!fees?.length ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -634,7 +431,7 @@ export default function StudentDetailPage() {
             fees.map((fee) => {
               const enrollment = typeof fee.enrollment === "object" ? fee.enrollment : null
               const course = enrollment?.course as EnrollmentCourseRef | undefined
-              const enrollmentId = enrollment ? enrollment.id || (enrollment as { _id?: string })._id || "" : ""
+              const enrollmentId = (enrollment as Enrollment | null)?.id
               return (
                 <Card key={fee.id}>
                   <CardHeader className="flex-row items-center justify-between">
@@ -732,7 +529,7 @@ export default function StudentDetailPage() {
                               <div>
                                 <p className="font-medium">{formatCurrency(p.amount)}</p>
                                 <p className="text-xs text-muted-foreground capitalize">
-                                    {p.date.slice(0, 10)} · {formatPaymentMode(p.mode)}
+                                  {p.date.slice(0, 10)} · {p.mode.replace("_", " ")}
                                   {p.receiptNo && ` · #${p.receiptNo}`}
                                 </p>
                               </div>
