@@ -15,6 +15,13 @@ import AttendancePage from "#pages/AttendancePage"
 import FeesPage from "#pages/FeesPage"
 import UsersPage from "#pages/UsersPage"
 import CertificatesPage from "#pages/CertificatesPage"
+import TestsDashboardPage from "#pages/tests/TestsDashboardPage"
+import QuestionBankPage from "#pages/tests/QuestionBankPage"
+import TestListPage from "#pages/tests/TestListPage"
+import TestAssignmentsPage from "#pages/tests/TestAssignmentsPage"
+import TestResultsPage from "#pages/tests/TestResultsPage"
+import TestAnalyticsPage from "#pages/tests/TestAnalyticsPage"
+import PublicTestPage from "#pages/tests/PublicTestPage"
 
 const queryClient = new QueryClient()
 
@@ -28,6 +35,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/verify" element={<VerifyPage />} />
               <Route path="/verify/:credentialId" element={<VerifyPage />} />
+              <Route path="/tests/share/:shareToken" element={<PublicTestPage />} />
 
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
@@ -53,6 +61,12 @@ function App() {
                   <Route element={<ProtectedRoute ownerOnly />}>
                     <Route path="/fees" element={<FeesPage />} />
                     <Route path="/users" element={<UsersPage />} />
+                    <Route path="/tests" element={<TestsDashboardPage />} />
+                    <Route path="/tests/questions" element={<QuestionBankPage />} />
+                    <Route path="/tests/tests" element={<TestListPage />} />
+                    <Route path="/tests/assignments" element={<TestAssignmentsPage />} />
+                    <Route path="/tests/results" element={<TestResultsPage />} />
+                    <Route path="/tests/analytics" element={<TestAnalyticsPage />} />
                   </Route>
                 </Route>
               </Route>

@@ -53,7 +53,7 @@ export const createEnrollment = asyncHandler(async (req: AuthedRequest, res) => 
     createdBy: req.user!.id,
   });
 
-  await ensureFeeForEnrollment(enrollment.id, body.enrollmentFee ?? course.fee);
+  await ensureFeeForEnrollment(enrollment.id, course.fee);
 
   const populated = await enrollment.populate([
     { path: "student", select: "firstName lastName email phone photoUrl" },

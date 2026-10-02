@@ -39,6 +39,7 @@ const navItems = [
   },
   { to: "/fees", label: "Fees", icon: IndianRupee, ownerOnly: true, module: null },
   { to: "/users", label: "Users", icon: ShieldCheck, ownerOnly: true, module: null },
+  { to: "/tests", label: "Tests", icon: Award, ownerOnly: true, module: null },
 ]
 
 export default function AppLayout() {

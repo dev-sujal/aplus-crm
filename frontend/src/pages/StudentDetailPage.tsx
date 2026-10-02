@@ -38,6 +38,7 @@ const tabs = [
   { id: "attendance", label: "Attendance" },
   { id: "fees", label: "Fees" },
   { id: "certificates", label: "Certificates" },
+  { id: "tests", label: "Tests" },
 ] as const
 type TabId = (typeof tabs)[number]["id"]
 
@@ -103,11 +104,21 @@ export default function StudentDetailPage() {
   const canManageFees = user?.role === "owner"
   const canViewCertificates = user?.role === "owner" || can("certificates", "view")
   const canGenerateCertificates = user?.role === "owner" || can("certificates", "edit")
+  const canViewTests = user?.role === "owner"
   const studentId = isObjectId(id) ? id : null
 
   const visibleTabs = React.useMemo(
-    () => tabs.filter((t) => (t.id === "fees" ? canManageFees : t.id === "certificates" ? canViewCertificates : true)),
-    [canManageFees, canViewCertificates]
+    () =>
+      tabs.filter((t) =>
+        t.id === "fees"
+          ? canManageFees
+          : t.id === "certificates"
+            ? canViewCertificates
+            : t.id === "tests"
+              ? canViewTests
+              : true
+      ),
+    [canManageFees, canViewCertificates, canViewTests]
   )
 
   React.useEffect(() => {
@@ -176,6 +187,12 @@ export default function StudentDetailPage() {
     queryKey: ["student-certificates", studentId],
     queryFn: () => api.get<StudentCertificateRow[]>(`/certificates/student/${studentId}`),
     enabled: Boolean(studentId) && tab === "certificates" && canViewCertificates,
+  })
+
+  const { data: testsOverview } = useQuery({
+    queryKey: ["student-tests", studentId],
+    queryFn: () => api.get(`/tests/analytics/leaderboard`),
+    enabled: Boolean(studentId) && tab === "tests" && canViewTests,
   })
 
   const {
@@ -662,6 +679,23 @@ export default function StudentDetailPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "tests" && canViewTests && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Tests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {testsOverview ? (
+              <p className="text-sm text-muted-foreground">
+                Test history and performance charts will appear here. Leaderboard data is loaded.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">No test data available yet.</p>
             )}
           </CardContent>
         </Card>

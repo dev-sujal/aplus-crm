@@ -1,8 +1,16 @@
+import { useQuery } from "@tanstack/react-query"
+import { FlaskConical } from "lucide-react"
 import { useAuth } from "#providers/auth-context"
+import { testsApi } from "#lib/tests-api"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "#components/ui/card"
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  const testsOverview = useQuery({
+    queryKey: ["tests-dashboard-overview"],
+    queryFn: () => testsApi.analyticsOverview(),
+    enabled: user?.role === "owner",
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,6 +52,29 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {user?.role === "owner" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="size-4" /> Tests summary</CardTitle>
+            <CardDescription>Quick glance at the new MCQ system.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <SummaryStat label="Tests" value={testsOverview.data?.tests ?? 0} loading={testsOverview.isLoading} />
+            <SummaryStat label="Assignments" value={testsOverview.data?.assignments ?? 0} loading={testsOverview.isLoading} />
+            <SummaryStat label="Attempts" value={testsOverview.data?.attempts ?? 0} loading={testsOverview.isLoading} />
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function SummaryStat({ label, value, loading }: { label: string; value: number; loading: boolean }) {
+  return (
+    <div className="rounded-xl border border-border px-4 py-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-2xl font-semibold">{loading ? "…" : value}</p>
     </div>
   )
 }
