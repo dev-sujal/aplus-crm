@@ -26,6 +26,7 @@ import {
 const studentSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
+  fatherName: z.string().optional().default(""),
   email: z.string().email("Invalid email").optional().or(z.literal("")).default(""),
   phone: z.string().optional().default(""),
   address: z.string().optional().default(""),
@@ -39,6 +40,7 @@ type StudentFormValues = z.output<typeof studentSchema>
 const emptyForm: StudentFormInput = {
   firstName: "",
   lastName: "",
+  fatherName: "",
   email: "",
   phone: "",
   address: "",
@@ -90,6 +92,7 @@ export default function StudentsPage() {
     reset({
       firstName: student.firstName,
       lastName: student.lastName,
+      fatherName: student.fatherName,
       email: student.email,
       phone: student.phone,
       address: student.address,
@@ -171,6 +174,10 @@ export default function StudentsPage() {
                       <p className="text-xs text-destructive">{errors.lastName.message}</p>
                     )}
                   </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="fatherName">Father's name</Label>
+                  <Input id="fatherName" {...register("fatherName")} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">

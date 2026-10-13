@@ -4,6 +4,7 @@ const studentSchema = new Schema(
   {
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
+    fatherName: { type: String, trim: true, default: "" },
     photoUrl: { type: String, default: "" },
     email: { type: String, trim: true, lowercase: true, default: "" },
     phone: { type: String, trim: true, default: "" },
@@ -15,7 +16,7 @@ const studentSchema = new Schema(
   { timestamps: true }
 );
 
-studentSchema.index({ firstName: "text", lastName: "text", email: "text", phone: "text" });
+studentSchema.index({ firstName: "text", lastName: "text", fatherName: "text", email: "text", phone: "text" });
 
 export type StudentDoc = InferSchemaType<typeof studentSchema>;
 

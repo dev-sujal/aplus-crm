@@ -270,6 +270,7 @@ export default function StudentDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Father's name" value={student.fatherName} />
           <Field label="Email" value={student.email} />
           <Field label="Phone" value={student.phone} />
           <Field label="Guardian contact" value={student.guardianContact} />

@@ -14,6 +14,7 @@ const dateLike = z
 export const createStudentSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
+  fatherName: z.string().optional().default(""),
   photoUrl: z.string().optional().default(""),
   email: z.string().email().optional().or(z.literal("")).default(""),
   phone: z.string().optional().default(""),
