@@ -5,16 +5,19 @@ import { generateCredentialId } from "../utils/credentialId.js";
 import { generateCertificatePdf } from "../utils/certificatePdf.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { formatStudentName } from "../utils/name.js";
 import { env } from "../config/env.js";
 import type { AuthedRequest } from "../middleware/auth.middleware.js";
 import type { CreateCertificateInput } from "../validators/certificate.validator.js";
 
 interface PopulatedStudent {
-  firstName: string;
-  lastName: string;
+  firstName?: string | null;
+  fatherName?: string | null;
+  lastName?: string | null;
 }
 interface PopulatedCourse {
   title: string;
+  description?: string | null;
 }
 interface PopulatedEnrollment {
   student: PopulatedStudent;
@@ -25,8 +28,8 @@ async function findCertificateWithDetails(credentialId: string) {
   const certificate = await Certificate.findOne({ credentialId }).populate({
     path: "enrollment",
     populate: [
-      { path: "student", select: "firstName lastName" },
-      { path: "course", select: "title" },
+      { path: "student", select: "firstName fatherName lastName" },
+      { path: "course", select: "title description" },
     ],
   });
   return certificate;
@@ -38,7 +41,7 @@ function verifyUrlFor(credentialId: string) {
 
 export const listCertificatesForStudent = asyncHandler(async (req, res) => {
   const studentId = new mongoose.Types.ObjectId(req.params.studentId as string);
-  const enrollments = await Enrollment.find({ student: studentId }).populate("course", "title");
+  const enrollments = await Enrollment.find({ student: studentId }).populate("course", "title description");
   const enrollmentIds = enrollments.map((e) => e.id);
 
   const certificates = await Certificate.find({ enrollment: { $in: enrollmentIds } });
@@ -63,12 +66,28 @@ export const listCertificatesForStudent = asyncHandler(async (req, res) => {
   res.json(rows);
 });
 
+export const checkCredentialIdAvailability = asyncHandler(async (req, res) => {
+  const credentialId = String(req.query.credentialId ?? "").trim();
+
+  if (!credentialId) {
+    throw ApiError.badRequest("Credential ID is required");
+  }
+
+  const exists = await Certificate.exists({ credentialId });
+  res.json({
+    valid: !exists,
+    message: exists
+      ? "This credential ID is already in use. Please choose another one."
+      : "Credential ID is valid to use.",
+  });
+});
+
 export const createCertificate = asyncHandler(async (req: AuthedRequest, res) => {
   const body = req.body as CreateCertificateInput;
 
   const enrollment = await Enrollment.findById(body.enrollment)
-    .populate("student", "firstName lastName")
-    .populate("course", "title");
+    .populate("student", "firstName fatherName lastName")
+    .populate("course", "title description");
   if (!enrollment) throw ApiError.notFound("Enrollment not found");
   if (enrollment.status === "dropped") {
     throw ApiError.conflict("Cannot issue a certificate for a dropped enrollment");
@@ -77,12 +96,21 @@ export const createCertificate = asyncHandler(async (req: AuthedRequest, res) =>
   const existing = await Certificate.findOne({ enrollment: enrollment.id });
   if (existing) throw ApiError.conflict("A certificate has already been issued for this enrollment");
 
-  const credentialId = await generateCredentialId();
+  const trimmedCredentialId = body.credentialId?.trim() ?? "";
+  const credentialId = trimmedCredentialId || (await generateCredentialId());
+
+  if (await Certificate.exists({ credentialId })) {
+    throw ApiError.conflict("This credential ID is already in use. Please choose another one.");
+  }
+
+  const issueDate = body.issueDate ? new Date(body.issueDate) : new Date();
+  const completionDate = body.completionDate ? new Date(body.completionDate) : null;
 
   const certificate = await Certificate.create({
     enrollment: enrollment.id,
     credentialId,
-    completionDate: body.completionDate ?? null,
+    issueDate,
+    completionDate,
     issuerName: body.issuerName || "",
     templateId: body.templateId,
     issuedBy: req.user!.id,
@@ -93,7 +121,7 @@ export const createCertificate = asyncHandler(async (req: AuthedRequest, res) =>
 
   res.status(201).json({
     ...certificate.toObject(),
-    studentName: `${student.firstName} ${student.lastName}`,
+    studentName: formatStudentName(student),
     courseName: course.title,
     verifyUrl: verifyUrlFor(credentialId),
   });
@@ -106,7 +134,7 @@ export const getCertificateInternal = asyncHandler(async (req, res) => {
   const enrollment = certificate.enrollment as unknown as PopulatedEnrollment;
   res.json({
     ...certificate.toObject(),
-    studentName: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
+    studentName: formatStudentName(enrollment.student),
     courseName: enrollment.course.title,
     verifyUrl: verifyUrlFor(certificate.credentialId),
   });
@@ -122,7 +150,7 @@ export const verifyCertificate = asyncHandler(async (req, res) => {
   res.json({
     valid: true,
     credentialId: certificate.credentialId,
-    studentName: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
+    studentName: formatStudentName(enrollment.student),
     courseName: enrollment.course.title,
     issueDate: certificate.issueDate,
     completionDate: certificate.completionDate,
@@ -136,8 +164,9 @@ export const downloadCertificate = asyncHandler(async (req, res) => {
 
   const enrollment = certificate.enrollment as unknown as PopulatedEnrollment;
   const pdfBytes = await generateCertificatePdf({
-    studentName: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
+    studentName: formatStudentName(enrollment.student),
     courseName: enrollment.course.title,
+    courseDescription: enrollment.course.description ?? "",
     credentialId: certificate.credentialId,
     issueDate: certificate.issueDate,
     completionDate: certificate.completionDate ?? null,

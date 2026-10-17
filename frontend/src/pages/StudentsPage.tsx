@@ -258,7 +258,7 @@ export default function StudentsPage() {
                       {studentId ? (
                         <Link to={`/students/${studentId}`} className="min-w-0">
                           <p className="truncate text-sm font-medium hover:underline">
-                            {student.firstName} {student.lastName}
+                            {student.firstName} {student.fatherName} {student.lastName}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
                             {student.email || student.phone || "No contact info"}

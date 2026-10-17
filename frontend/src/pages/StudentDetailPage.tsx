@@ -6,7 +6,7 @@ import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ArrowLeft, Award, Download, Plus } from "lucide-react"
-import { api, ApiRequestError, API_URL } from "#lib/api-client"
+import { api, ApiRequestError, API_URL, downloadFile } from "#lib/api-client"
 import { useAuth } from "#providers/auth-context"
 import type {
   AttendanceRecord,
@@ -70,6 +70,8 @@ type PaymentInput = z.input<typeof paymentSchema>
 type PaymentValues = z.output<typeof paymentSchema>
 
 const certificateSchema = z.object({
+  credentialId: z.string().optional().default(""),
+  issueDate: z.string().optional().default(""),
   completionDate: z.string().optional().default(""),
   issuerName: z.string().optional().default(""),
 })
@@ -164,11 +166,25 @@ export default function StudentDetailPage() {
     register: registerPayment,
     handleSubmit: handlePaymentSubmit,
     reset: resetPayment,
+    setValue: setPaymentValue,
+    watch: watchPayment,
     formState: { isSubmitting: isSubmittingPayment },
   } = useForm<PaymentInput, unknown, PaymentValues>({
     resolver: zodResolver(paymentSchema),
     defaultValues: { amount: undefined, mode: "cash", note: "", receiptNo: "" },
   })
+
+  const { data: nextReceiptNo } = useQuery({
+    queryKey: ["fee-next-receipt-number"],
+    queryFn: () => api.get<{ receiptNo: string }>("/fees/next-receipt-number"),
+    enabled: paymentDialogFeeId !== null,
+  })
+
+  React.useEffect(() => {
+    if (paymentDialogFeeId !== null) {
+      setPaymentValue("receiptNo", nextReceiptNo?.receiptNo ?? "", { shouldDirty: false })
+    }
+  }, [paymentDialogFeeId, nextReceiptNo, setPaymentValue])
 
   const addPayment = useMutation({
     mutationFn: ({ enrollmentId, values }: { enrollmentId: string; values: PaymentValues }) =>
@@ -176,6 +192,7 @@ export default function StudentDetailPage() {
     onSuccess: () => {
       toast.success("Payment recorded")
       queryClient.invalidateQueries({ queryKey: ["student-fees", studentId] })
+      queryClient.invalidateQueries({ queryKey: ["fee-next-receipt-number"] })
       setPaymentDialogFeeId(null)
       resetPayment()
     },
@@ -190,6 +207,12 @@ export default function StudentDetailPage() {
     enabled: Boolean(studentId) && tab === "certificates" && canViewCertificates,
   })
 
+  const { data: nextCertificateId } = useQuery({
+    queryKey: ["certificate-next-credential-id", certDialogEnrollmentId],
+    queryFn: () => api.get<{ credentialId: string }>("/certificates/next-credential-id"),
+    enabled: certDialogEnrollmentId !== null,
+  })
+
   const { data: testsOverview } = useQuery({
     queryKey: ["student-tests", studentId],
     queryFn: () => api.get(`/tests/analytics/leaderboard`),
@@ -200,16 +223,65 @@ export default function StudentDetailPage() {
     register: registerCertificate,
     handleSubmit: handleCertificateSubmit,
     reset: resetCertificate,
+    watch: watchCertificate,
     formState: { isSubmitting: isSubmittingCertificate },
   } = useForm<CertificateInput, unknown, CertificateValues>({
     resolver: zodResolver(certificateSchema),
-    defaultValues: { completionDate: "", issuerName: "" },
+    defaultValues: { credentialId: "", issueDate: "", completionDate: "", issuerName: "" },
   })
+
+  const [credentialCheck, setCredentialCheck] = React.useState<{ valid: boolean; message: string } | null>(null)
+  const [isCheckingCredential, setIsCheckingCredential] = React.useState(false)
+
+  React.useEffect(() => {
+    if (certDialogEnrollmentId === null) {
+      setCredentialCheck(null)
+      return
+    }
+
+    const today = new Date().toISOString().slice(0, 10)
+    resetCertificate({
+      credentialId: nextCertificateId?.credentialId ?? "",
+      issueDate: today,
+      completionDate: "",
+      issuerName: "",
+    })
+    setCredentialCheck(null)
+  }, [certDialogEnrollmentId, nextCertificateId, resetCertificate])
+
+  const checkCredentialId = React.useCallback(async () => {
+    const credentialId = watchCertificate("credentialId")?.trim()
+    if (!credentialId) {
+      setCredentialCheck({ valid: false, message: "Enter a credential ID to check." })
+      return
+    }
+
+    setIsCheckingCredential(true)
+    try {
+      const response = await api.get<{ valid: boolean; message: string }>(
+        `/certificates/check-credential-id?credentialId=${encodeURIComponent(credentialId)}`
+      )
+      setCredentialCheck(response)
+      if (response.valid) {
+        toast.success(response.message)
+      } else {
+        toast.error(response.message)
+      }
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.message : "Unable to check credential ID"
+      setCredentialCheck({ valid: false, message })
+      toast.error(message)
+    } finally {
+      setIsCheckingCredential(false)
+    }
+  }, [watchCertificate])
 
   const generateCertificate = useMutation({
     mutationFn: ({ enrollmentId, values }: { enrollmentId: string; values: CertificateValues }) =>
       api.post("/certificates", {
         enrollment: enrollmentId,
+        credentialId: values.credentialId || undefined,
+        issueDate: values.issueDate || null,
         completionDate: values.completionDate || null,
         issuerName: values.issuerName,
       }),
@@ -578,8 +650,10 @@ export default function StudentDetailPage() {
                                 <Label htmlFor="receiptNo">Receipt no.</Label>
                                 <input
                                   id="receiptNo"
+                                  readOnly
                                   className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                                  {...registerPayment("receiptNo")}
+                                  value={watchPayment("receiptNo") ?? ""}
+                                  onChange={(event) => setPaymentValue("receiptNo", event.target.value)}
                                 />
                               </div>
                             </div>
@@ -613,7 +687,7 @@ export default function StudentDetailPage() {
                           .slice()
                           .reverse()
                           .map((p) => (
-                            <div key={p.id} className="flex items-center justify-between py-2 text-sm">
+                            <div key={p.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                               <div>
                                 <p className="font-medium">{formatCurrency(p.amount)}</p>
                                 <p className="text-xs text-muted-foreground capitalize">
@@ -621,6 +695,19 @@ export default function StudentDetailPage() {
                                   {p.receiptNo && ` · #${p.receiptNo}`}
                                 </p>
                               </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                type="button"
+                                onClick={() =>
+                                  void downloadFile(
+                                    `/fees/payments/${p.id}/download`,
+                                    `receipt-${p.receiptNo || p.id}.pdf`
+                                  )
+                                }
+                              >
+                                <Download className="size-3.5" /> Receipt PDF
+                              </Button>
                             </div>
                           ))}
                       </div>
@@ -717,6 +804,48 @@ export default function StudentDetailPage() {
                               noValidate
                             >
                               <div className="flex flex-col gap-1.5">
+                                <Label htmlFor="credentialId">Certificate credential ID</Label>
+                                <div className="flex gap-2">
+                                  <input
+                                    id="credentialId"
+                                    className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                                    placeholder="CC-2026-0001"
+                                    {...registerCertificate("credentialId", {
+                                      onChange: () => setCredentialCheck(null),
+                                    })}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0"
+                                    onClick={() => void checkCredentialId()}
+                                    disabled={isCheckingCredential}
+                                  >
+                                    {isCheckingCredential ? "Checking…" : "Check"}
+                                  </Button>
+                                </div>
+                                {credentialCheck && (
+                                  <p
+                                    className={cn(
+                                      "text-xs",
+                                      credentialCheck.valid ? "text-green-600" : "text-red-600"
+                                    )}
+                                  >
+                                    {credentialCheck.message}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <Label htmlFor="issueDate">Issue date</Label>
+                                <input
+                                  id="issueDate"
+                                  type="date"
+                                  className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                                  {...registerCertificate("issueDate")}
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="completionDate">Completion date (optional)</Label>
                                 <input
                                   id="completionDate"
@@ -737,7 +866,11 @@ export default function StudentDetailPage() {
                               <DialogFooter>
                                 <Button
                                   type="submit"
-                                  disabled={isSubmittingCertificate || generateCertificate.isPending}
+                                  disabled={
+                                    isSubmittingCertificate ||
+                                    generateCertificate.isPending ||
+                                    (credentialCheck !== null && !credentialCheck.valid)
+                                  }
                                 >
                                   {generateCertificate.isPending ? "Generating…" : "Generate"}
                                 </Button>

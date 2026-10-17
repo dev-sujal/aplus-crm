@@ -7,6 +7,7 @@ import path from "node:path";
 export interface CertificatePdfInput {
   studentName: string;
   courseName: string;
+  courseDescription?: string;
   credentialId: string;
   issueDate: Date;
   completionDate: Date | null;
@@ -20,9 +21,9 @@ export interface CertificatePdfInput {
 /* ------------------------------------------------------------------ */
 const INSTITUTE = {
   isoNo: "TSNUK28970",
-  udyamNo: "UDYAM-MH-0305005",
+  udyamNo: "UDYAM-MH-19-0305005",
   tmNo: "6577453",
-  issuerTitle: "Abhishek Sharma",
+  issuerTitle: "Owner / Director",
 };
 
 // The State Emblem of India is legally protected (Emblems and Names Act /
@@ -89,7 +90,7 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
 
   /* ---- fonts ---- */
   const embed = async (f: string) => doc.embedFont(await asset("fonts", f), { subset: true });
-  const script = await embed("GreatVibes-Regular.woff");
+  const nameFont = await embed("PlayfairDisplay-SemiBoldItalic.woff");
   const serifBold = await embed("PlayfairDisplay-Bold.woff");
   const serifItalic = await embed("CormorantGaramond-MediumItalic.woff");
   const sans = await embed("Montserrat-Medium.woff");
@@ -151,8 +152,8 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   /* ================================================================ */
   page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: PAPER });
 
-  // faint watermark
-  drawImg(logo, W / 2, 232, 560, 140, 0.028);
+  // faint A+ watermark
+  drawImg(aplusMark, W / 2, 146, 244, 244, 0.032);
 
   // triple border
   page.drawRectangle({ x: 16, y: 16, width: W - 32, height: H - 32, borderColor: NAVY, borderWidth: 5 });
@@ -182,11 +183,11 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   const logoSize = drawImg(logo, W / 2, headTop, 350, 78);
 
   // ISO badge (left)
-  const sideCx = 58; // distance of the side logos' centre from the content edge
+  const sideCx = 40; // distance of the side logos' centre from the content edge
   const captionTop = headTop + 76;
   drawImg(iso, LEFT + sideCx, headTop + 2, 62, 50);
   centered("9001:2015", LEFT + sideCx, captionTop - 11, sansBold, 9, NAVY, 0.8);
-  centered("ISO CERTIFIED", LEFT + sideCx, captionTop, sansBold, 6.2, NAVY, 0.6);
+  centered("CERTIFIED INSTITUTE", LEFT + sideCx, captionTop, sansBold, 6.2, NAVY, 0.6);
 
   // emblem (right)
   if (emblem) {
@@ -211,28 +212,38 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   /* ================================================================ */
   /*  STUDENT NAME                                                    */
   /* ================================================================ */
-  let nameSize = 54;
-  while (script.widthOfTextAtSize(input.studentName, nameSize) > 580 && nameSize > 26) nameSize -= 2;
-  centered(input.studentName, W / 2, 296, script, nameSize, NAVY);
+  let nameSize = 44;
+  while (nameFont.widthOfTextAtSize(input.studentName, nameSize) > 580 && nameSize > 22) nameSize -= 2;
+  centered(input.studentName, W / 2, 296, nameFont, nameSize, NAVY);
 
-  const nameLineHalf = Math.min(Math.max(textW(input.studentName, script, nameSize) / 2 + 40, 170), 300);
+  const nameLineHalf = Math.min(Math.max(textW(input.studentName, nameFont, nameSize) / 2 + 40, 170), 300);
   hline(W / 2 - nameLineHalf, W / 2 + nameLineHalf, 310, 1.1, GOLD);
   hline(W / 2 - nameLineHalf + 30, W / 2 + nameLineHalf - 30, 313.5, 0.4, GOLD);
 
   /* ================================================================ */
   /*  COURSE                                                          */
   /* ================================================================ */
-  centered("for successfully completing the course of", W / 2, 341, serifItalic, 16, MUTED);
+  centered("for successfully completing the course of", W / 2, 338, serifItalic, 16, MUTED);
 
   const oneLine = wrap(input.courseName, serifBold, 23, 640, 1).length === 1 &&
     serifBold.widthOfTextAtSize(input.courseName, 23) <= 640;
   const courseSize = oneLine ? 23 : 19;
-  const courseLeading = oneLine ? 0 : 24;
+  const courseLeading = oneLine ? 0 : 22;
   const courseLines = oneLine ? [input.courseName] : wrap(input.courseName, serifBold, courseSize, 660, 2);
-  const courseTop = oneLine ? 374 : 366;
+  const courseTop = oneLine ? 366 : 354;
   courseLines.forEach((ln, i) => centered(ln, W / 2, courseTop + i * courseLeading, serifBold, courseSize, RED));
 
-  const dateTop = oneLine ? 402 : 411;
+  // description: small, bold, letter-spaced sans (like "Word • Excel • PowerPoint")
+   // description: slightly bigger, bolder, closer to the course name
+  const courseDescription = (input.courseDescription ?? "").trim();
+  const descriptionTop = oneLine ? 384 : 394;
+  if (courseDescription) {
+    centered(courseDescription, W / 2, descriptionTop, sansBold, 11.5, NAVY, 0.8);
+    // second pass with a tiny offset thickens the strokes (faux-bold)
+    centered(courseDescription, W / 2 + 0.35, descriptionTop, sansBold, 11.5, NAVY, 0.8);
+  }
+
+  const dateTop = courseDescription ? (oneLine ? 406 : 412) : (oneLine ? 392 : 398);
   const completionLine = input.completionDate
     ? `Completed on ${formatDate(input.completionDate)}   |   Issued on ${formatDate(input.issueDate)}`
     : `Issued on ${formatDate(input.issueDate)}`;
@@ -245,7 +256,8 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
 
   // Signature (left)
   const sigCx = LEFT + 100;
-  drawImg(signature, sigCx, footLine - 52, 150, 48);
+  const sigBox = imgFit(signature, 126, 40);
+  drawImg(signature, sigCx, footLine - 5 - sigBox.h, 126, 40);
   hline(sigCx - 100, sigCx + 100, footLine, 0.9, NAVY);
   centered(input.issuerName || "Authorized Signatory", sigCx, footLine + 14, sansBold, 10, NAVY, 0.3);
   centered(INSTITUTE.issuerTitle, sigCx, footLine + 26, serifItalic, 12.5, MUTED);

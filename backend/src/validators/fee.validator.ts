@@ -13,8 +13,8 @@ export const addPaymentSchema = z.object({
     .enum(["cash", "upi", "card", "bank_transfer", "other", "online", "offline"])
     .optional()
     .default("cash"),
-  note: z.string().optional().default(""),
-  receiptNo: z.string().optional().default(""),
+  note: z.string().trim().optional().default(""),
+  receiptNo: z.string().trim().optional().default(""),
   date: dateLike,
 });
 export type AddPaymentInput = z.infer<typeof addPaymentSchema>;

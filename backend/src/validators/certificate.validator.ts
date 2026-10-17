@@ -13,6 +13,8 @@ const dateLike = z
 
 export const createCertificateSchema = z.object({
   enrollment: objectIdString,
+  credentialId: z.string().trim().optional().default(""),
+  issueDate: dateLike,
   completionDate: dateLike,
   issuerName: z.string().optional().default(""),
   templateId: z.string().optional().default("classic"),

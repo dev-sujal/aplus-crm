@@ -3,11 +3,13 @@ import { authenticate, requirePermission } from "../middleware/auth.middleware.j
 import { validate } from "../middleware/validate.middleware.js";
 import { createCertificateSchema, studentCertificatesParamSchema } from "../validators/certificate.validator.js";
 import {
+  checkCredentialIdAvailability,
   createCertificate,
   downloadCertificate,
   getCertificateInternal,
   listCertificatesForStudent,
 } from "../controllers/certificates.controller.js";
+import { generateCredentialId } from "../utils/credentialId.js";
 
 const router = Router();
 
@@ -16,6 +18,11 @@ router.get("/:credentialId/download", downloadCertificate);
 
 // Internal — requires auth from here down.
 router.use(authenticate);
+router.get("/check-credential-id", requirePermission("certificates", "edit"), checkCredentialIdAvailability);
+router.get("/next-credential-id", requirePermission("certificates", "edit"), async (req, res) => {
+  const credentialId = await generateCredentialId();
+  res.json({ credentialId });
+});
 router.post("/", requirePermission("certificates", "edit"), validate(createCertificateSchema), createCertificate);
 router.get(
   "/student/:studentId",

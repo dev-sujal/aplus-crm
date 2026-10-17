@@ -97,6 +97,44 @@ export async function apiFetch<T = unknown>(
   return (await res.json()) as T
 }
 
+export async function downloadFile(path: string, fileName = "download") {
+  const doFetch = async () => {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    })
+    return res
+  }
+
+  let res = await doFetch()
+
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      res = await doFetch()
+    }
+  }
+
+  if (!res.ok) {
+    const { message, details } = await parseErrorBody(res)
+    throw new ApiRequestError(res.status, message, details)
+  }
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = fileName
+  anchor.rel = "noopener noreferrer"
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   get: <T = unknown>(path: string, init?: ApiFetchOptions) =>
     apiFetch<T>(path, { ...init, method: "GET" }),

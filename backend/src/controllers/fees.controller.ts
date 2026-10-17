@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import { Fee } from "../models/Fee.model.js";
 import { Enrollment } from "../models/Enrollment.model.js";
 import { ensureFeeForEnrollment, validateFeeCap, validatePaymentAmount } from "../utils/fee.js";
+import { generateFeeReceiptPdf } from "../utils/feeReceiptPdf.js";
+import { getNextReceiptNumber } from "../utils/receiptNumber.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import type { AddPaymentInput, UpdateFeeInput } from "../validators/fee.validator.js";
@@ -20,6 +22,16 @@ function getObjectId(value: unknown) {
   if (value instanceof mongoose.Types.ObjectId) return value.toString();
   return typeof value === "string" ? value : "";
 }
+
+async function buildNextReceiptNumber() {
+  const fees = await Fee.find({}, { payments: 1 });
+  const existingNumbers = fees.flatMap((fee) => fee.payments.map((payment) => payment.receiptNo));
+  return getNextReceiptNumber(existingNumbers);
+}
+
+export const getNextReceipt = asyncHandler(async (_req, res) => {
+  res.json({ receiptNo: await buildNextReceiptNumber() });
+});
 
 export const getFeeByEnrollment = asyncHandler(async (req, res) => {
   const enrollment = await Enrollment.findById(req.params.enrollmentId).populate("course", "fee");
@@ -49,11 +61,18 @@ export const addPayment = asyncHandler(async (req, res) => {
 
   validatePaymentAmount(body.amount, fee.amountRemaining);
 
+  const trimmedReceiptNo = (body.receiptNo ?? "").trim();
+  const requestedReceiptNo = trimmedReceiptNo || (await buildNextReceiptNumber());
+  const receiptTaken = await Fee.exists({ "payments.receiptNo": requestedReceiptNo });
+  if (receiptTaken) {
+    throw ApiError.conflict("Receipt number already exists");
+  }
+
   fee.payments.push({
     amount: body.amount,
     mode: body.mode,
     note: body.note,
-    receiptNo: body.receiptNo,
+    receiptNo: requestedReceiptNo,
     date: body.date ?? new Date(),
   });
   fee.amountPaid = fee.payments.reduce((sum, p) => sum + p.amount, 0);
@@ -66,6 +85,42 @@ export const addPayment = asyncHandler(async (req, res) => {
   await fee.save();
 
   res.status(201).json(fee);
+});
+
+export const downloadFeeReceipt = asyncHandler(async (req, res) => {
+  const paymentId = req.params.paymentId as string;
+  const fee = await Fee.findOne({ "payments._id": paymentId }).populate(populateRefs);
+  if (!fee) throw ApiError.notFound("Payment receipt not found");
+
+  const payment = fee.payments.id(paymentId);
+  if (!payment) throw ApiError.notFound("Payment receipt not found");
+
+  const enrollment = fee.enrollment as unknown as {
+    student?: { firstName?: string; lastName?: string };
+    course?: { title?: string };
+  } | null;
+
+  const pdfBytes = await generateFeeReceiptPdf({
+    studentName: enrollment?.student
+      ? `${enrollment.student.firstName ?? ""} ${enrollment.student.lastName ?? ""}`.trim()
+      : "Student",
+    courseName: enrollment?.course?.title ?? "Course",
+    receiptNo: payment.receiptNo || paymentId,
+    amount: payment.amount,
+    mode: payment.mode,
+    note: payment.note || "",
+    paymentDate: payment.date,
+    totalFee: fee.totalFee,
+    amountPaid: fee.amountPaid,
+    amountRemaining: fee.amountRemaining,
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="receipt-${payment.receiptNo || paymentId}.pdf"`
+  );
+  res.send(Buffer.from(pdfBytes));
 });
 
 export const updateFee = asyncHandler(async (req, res) => {
