@@ -29,7 +29,7 @@ export const env = {
   ownerSeedEmail: process.env.OWNER_SEED_EMAIL ?? "owner@aplus.test",
   ownerSeedPassword: process.env.OWNER_SEED_PASSWORD ?? "ChangeMe123!",
 
-  centreName: process.env.CENTRE_NAME ?? "A+ Computer Classes",
+  centreName: process.env.CENTRE_NAME ?? "Aplus Computer Classes",
   // Base URL the public verify page and certificate QR codes point to.
   publicAppUrl: process.env.PUBLIC_APP_URL ?? process.env.CLIENT_URL ?? "http://localhost:5173",
 };
