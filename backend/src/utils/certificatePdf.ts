@@ -259,9 +259,8 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   const sigBox = imgFit(signature, 126, 40);
   drawImg(signature, sigCx, footLine - 5 - sigBox.h, 126, 40);
   hline(sigCx - 100, sigCx + 100, footLine, 0.9, NAVY);
-  centered(input.centreName || "Aplus Computer Classes", sigCx, footLine + 8, serifItalic, 12, MUTED, 0.2);
-  centered(input.issuerName || "Authorized Signatory", sigCx, footLine + 20, sansBold, 10, NAVY, 0.3);
-  centered(INSTITUTE.issuerTitle, sigCx, footLine + 32, serifItalic, 12.5, MUTED);
+  centered(input.issuerName || "Authorized Signatory", sigCx, footLine + 14, sansBold, 10, NAVY, 0.3);
+  centered(INSTITUTE.issuerTitle, sigCx, footLine + 26, serifItalic, 12.5, MUTED);
 
   // Seal (centre)
   const sealCx = W / 2;
