@@ -83,7 +83,7 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   doc.setTitle(`Certificate - ${input.studentName}`);
-  doc.setAuthor("A+ Computer Classes");
+  doc.setAuthor("Aplus Computer Classes");
   doc.setSubject(input.courseName);
 
   const page = doc.addPage([W, H]);
