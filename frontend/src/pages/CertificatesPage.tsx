@@ -64,7 +64,7 @@ export default function CertificatesPage() {
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">
-                        {student.firstName} {student.lastName}
+                        {student.firstName} {student.fatherName} {student.lastName}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {student.email || student.phone || "No contact info"}
