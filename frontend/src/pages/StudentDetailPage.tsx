@@ -16,6 +16,7 @@ import type {
   Enrollment,
   EnrollmentCourseRef,
   Fee,
+  Payment,
   PaginatedResult,
   Student,
 } from "#lib/types"
@@ -70,6 +71,15 @@ const paymentSchema = z.object({
 type PaymentInput = z.input<typeof paymentSchema>
 type PaymentValues = z.output<typeof paymentSchema>
 
+const editPaymentSchema = z.object({
+  amount: z.coerce.number().positive("Enter an amount greater than 0"),
+  mode: z.enum(["cash", "upi", "card", "bank_transfer", "other"]).default("cash"),
+  note: z.string().optional().default(""),
+  date: z.string().min(1, "Payment date is required"),
+})
+type EditPaymentInput = z.input<typeof editPaymentSchema>
+type EditPaymentValues = z.output<typeof editPaymentSchema>
+
 const editEnrollmentSchema = z.object({
   fee: z.number({ error: "Enter a valid fee" }).min(0, "Fee must be zero or greater"),
   batch: z.string().optional().default(""),
@@ -120,6 +130,10 @@ export default function StudentDetailPage() {
   const [tab, setTab] = React.useState<TabId>("courses")
   const [enrollOpen, setEnrollOpen] = React.useState(false)
   const [paymentDialogFeeId, setPaymentDialogFeeId] = React.useState<string | null>(null)
+  const [editingPayment, setEditingPayment] = React.useState<{
+    feeId: string
+    paymentId: string
+  } | null>(null)
   const [certDialogEnrollmentId, setCertDialogEnrollmentId] = React.useState<string | null>(null)
   const [editingCertificate, setEditingCertificate] = React.useState<StudentCertificateRow | null>(null)
   const [editingEnrollment, setEditingEnrollment] = React.useState<Enrollment | null>(null)
@@ -221,6 +235,65 @@ export default function StudentDetailPage() {
       toast.error(err instanceof ApiRequestError ? err.message : "Failed to record payment")
     },
   })
+
+  const {
+    register: registerEditPayment,
+    handleSubmit: handleEditPaymentSubmit,
+    reset: resetEditPayment,
+    formState: { isSubmitting: isSubmittingEditPayment },
+  } = useForm<EditPaymentInput, unknown, EditPaymentValues>({
+    resolver: zodResolver(editPaymentSchema),
+    defaultValues: { amount: undefined, mode: "cash", note: "", date: "" },
+  })
+
+  const editPayment = useMutation({
+    mutationFn: ({ paymentId, values }: { paymentId: string; values: EditPaymentValues }) =>
+      api.patch(`/fees/payments/${paymentId}`, values),
+    onSuccess: () => {
+      toast.success("Payment updated")
+      queryClient.invalidateQueries({ queryKey: ["student-fees", studentId] })
+      queryClient.invalidateQueries({ queryKey: ["fees-summary"] })
+      setEditingPayment(null)
+      resetEditPayment()
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiRequestError ? err.message : "Failed to update payment")
+    },
+  })
+
+  const selectedFeeForEdit = React.useMemo(() => {
+    if (!editingPayment || !fees) return null
+    return fees.find((fee) => fee.id === editingPayment.feeId) ?? null
+  }, [editingPayment, fees])
+
+  const selectedPaymentForEdit = React.useMemo(() => {
+    if (!editingPayment || !selectedFeeForEdit) return null
+    return selectedFeeForEdit.payments.find((p) => p.id === editingPayment.paymentId) ?? null
+  }, [editingPayment, selectedFeeForEdit])
+
+  const maxEditablePaymentAmount = React.useMemo(() => {
+    if (!selectedFeeForEdit || !selectedPaymentForEdit) return 0
+    return selectedFeeForEdit.totalFee - (selectedFeeForEdit.amountPaid - selectedPaymentForEdit.amount)
+  }, [selectedFeeForEdit, selectedPaymentForEdit])
+
+  const openEditPayment = React.useCallback((fee: Fee, payment: Payment) => {
+    const editableMode: EditPaymentValues["mode"] =
+      payment.mode === "cash" ||
+      payment.mode === "upi" ||
+      payment.mode === "card" ||
+      payment.mode === "bank_transfer" ||
+      payment.mode === "other"
+        ? payment.mode
+        : "cash"
+
+    resetEditPayment({
+      amount: payment.amount,
+      mode: editableMode,
+      note: payment.note ?? "",
+      date: payment.date.slice(0, 10),
+    })
+    setEditingPayment({ feeId: fee.id, paymentId: payment.id })
+  }, [resetEditPayment])
 
   const { data: certificates } = useQuery({
     queryKey: ["student-certificates", studentId],
@@ -812,19 +885,29 @@ export default function StudentDetailPage() {
                                   {p.receiptNo && ` · #${p.receiptNo}`}
                                 </p>
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                type="button"
-                                onClick={() =>
-                                  void downloadFile(
-                                    `/fees/payments/${p.id}/download`,
-                                    `receipt-${p.receiptNo || p.id}.pdf`
-                                  )
-                                }
-                              >
-                                <Download className="size-3.5" /> Receipt PDF
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => openEditPayment(fee, p)}
+                                >
+                                  <Pencil className="size-3.5" /> Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() =>
+                                    void downloadFile(
+                                      `/fees/payments/${p.id}/download`,
+                                      `receipt-${p.receiptNo || p.id}.pdf`
+                                    )
+                                  }
+                                >
+                                  <Download className="size-3.5" /> Receipt PDF
+                                </Button>
+                              </div>
                             </div>
                           ))}
                       </div>
@@ -834,6 +917,103 @@ export default function StudentDetailPage() {
               )
             })
           )}
+
+          <Dialog
+            open={Boolean(editingPayment && selectedFeeForEdit && selectedPaymentForEdit)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setEditingPayment(null)
+                resetEditPayment()
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit payment</DialogTitle>
+                <DialogDescription>
+                  Update the recorded payment. Fee totals and remaining balance will be recalculated.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                className="flex flex-col gap-4"
+                onSubmit={handleEditPaymentSubmit((values) => {
+                  if (!selectedPaymentForEdit) return
+
+                  if (values.amount > maxEditablePaymentAmount) {
+                    toast.error(
+                      `Payment amount cannot exceed ${formatCurrency(maxEditablePaymentAmount)} for this fee.`
+                    )
+                    return
+                  }
+
+                  editPayment.mutate({
+                    paymentId: selectedPaymentForEdit.id,
+                    values,
+                  })
+                })}
+                noValidate
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="editPaymentAmount">Amount</Label>
+                  <input
+                    id="editPaymentAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={maxEditablePaymentAmount > 0 ? maxEditablePaymentAmount : undefined}
+                    className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                    {...registerEditPayment("amount")}
+                  />
+                  {maxEditablePaymentAmount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Maximum allowed for this payment: {formatCurrency(maxEditablePaymentAmount)}
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="editPaymentMode">Payment mode</Label>
+                    <select
+                      id="editPaymentMode"
+                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                      {...registerEditPayment("mode")}
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="upi">UPI</option>
+                      <option value="card">Card</option>
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="editPaymentDate">Payment date</Label>
+                    <input
+                      id="editPaymentDate"
+                      type="date"
+                      className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                      {...registerEditPayment("date")}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="editPaymentNote">Note (optional)</Label>
+                  <input
+                    id="editPaymentNote"
+                    className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                    {...registerEditPayment("note")}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingEditPayment || editPayment.isPending}
+                  >
+                    {editPayment.isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 

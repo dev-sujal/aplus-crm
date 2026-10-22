@@ -19,6 +19,16 @@ export const addPaymentSchema = z.object({
 });
 export type AddPaymentInput = z.infer<typeof addPaymentSchema>;
 
+export const updatePaymentSchema = z.object({
+  amount: z.number().positive("Amount must be greater than 0").optional(),
+  mode: z
+    .enum(["cash", "upi", "card", "bank_transfer", "other", "online", "offline"])
+    .optional(),
+  note: z.string().trim().optional(),
+  date: dateLike,
+});
+export type UpdatePaymentInput = z.infer<typeof updatePaymentSchema>;
+
 export const updateFeeSchema = z.object({
   totalFee: z.number().min(0).optional(),
   dueDate: dateLike,

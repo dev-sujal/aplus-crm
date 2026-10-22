@@ -6,7 +6,11 @@ import { generateFeeReceiptPdf } from "../utils/feeReceiptPdf.js";
 import { getNextReceiptNumber } from "../utils/receiptNumber.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import type { AddPaymentInput, UpdateFeeInput } from "../validators/fee.validator.js";
+import type {
+  AddPaymentInput,
+  UpdateFeeInput,
+  UpdatePaymentInput,
+} from "../validators/fee.validator.js";
 
 const populateRefs = [
   {
@@ -121,6 +125,39 @@ export const downloadFeeReceipt = asyncHandler(async (req, res) => {
     `attachment; filename="receipt-${payment.receiptNo || paymentId}.pdf"`
   );
   res.send(Buffer.from(pdfBytes));
+});
+
+export const updatePayment = asyncHandler(async (req, res) => {
+  const paymentId = req.params.paymentId as string;
+  const body = req.body as UpdatePaymentInput;
+
+  const fee = await Fee.findOne({ "payments._id": paymentId });
+  if (!fee) throw ApiError.notFound("Payment not found");
+
+  const payment = fee.payments.id(paymentId);
+  if (!payment) throw ApiError.notFound("Payment not found");
+
+  const nextAmount = body.amount ?? payment.amount;
+  const nextAmountPaid = fee.amountPaid - payment.amount + nextAmount;
+
+  if (nextAmount <= 0) {
+    throw ApiError.badRequest("Payment amount must be greater than 0");
+  }
+
+  if (nextAmountPaid > fee.totalFee) {
+    throw ApiError.badRequest("Collected amount cannot exceed the fee total");
+  }
+
+  payment.amount = nextAmount;
+  if (body.mode !== undefined) payment.mode = body.mode;
+  if (body.note !== undefined) payment.note = body.note;
+  if (body.date !== undefined && body.date !== null) payment.date = body.date;
+
+  fee.amountPaid = nextAmountPaid;
+  fee.amountRemaining = Math.max(fee.totalFee - fee.amountPaid, 0);
+  await fee.save();
+
+  res.json(fee);
 });
 
 export const updateFee = asyncHandler(async (req, res) => {
