@@ -21,15 +21,9 @@ export interface CertificatePdfInput {
 /* ------------------------------------------------------------------ */
 const INSTITUTE = {
   isoNo: "TSNUK28970",
-  udyamNo: "UDYAM-MH-19-0305005",
   tmNo: "6577453",
   issuerTitle: "Proprietor",
 };
-
-// The State Emblem of India is legally protected (Emblems and Names Act /
-// State Emblem of India (Prohibition of Improper Use) Act, 2005). Keep this
-// off unless you hold permission to use it.
-const SHOW_NATIONAL_EMBLEM = true;
 
 const ASSET_DIR =
   process.env.CERT_ASSET_DIR ?? path.join(process.cwd(), "assets", "certificate");
@@ -99,10 +93,10 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   /* ---- images ---- */
   const logo = await doc.embedPng(await asset("logo.png"));
   const aplusMark = await doc.embedPng(await asset("aplus-mark.png"));
-  const iso = await doc.embedPng(await asset("iso.png"));
+  const isoBadge = await doc.embedPng(await asset("iso-badge.png"));
+  const udyamBadge = await doc.embedPng(await asset("udyam-badge.png"));
   const tm = await doc.embedPng(await asset("tm.png"));
   const signature = await doc.embedPng(await asset("signature.png"));
-  const emblem = SHOW_NATIONAL_EMBLEM ? await doc.embedPng(await asset("emblem.png")) : null;
 
   /* ---- drawing primitives (all Y values are measured from the TOP) ---- */
   const Y = (top: number) => H - top;
@@ -173,7 +167,7 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   }
 
   /* ================================================================ */
-  /*  HEADER – ISO | LOGO | EMBLEM                                    */
+  /*  HEADER – ISO | LOGO | ISO                                       */
   /* ================================================================ */
   const LEFT = 62;
   const RIGHT = W - 62;
@@ -182,21 +176,10 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   // logo (centre) – larger
   const logoSize = drawImg(logo, W / 2, headTop, 350, 78);
 
-  // ISO badge (left)
-  const sideCx = 40; // distance of the side logos' centre from the content edge
-  const captionTop = headTop + 76;
-  drawImg(iso, LEFT + sideCx, headTop + 2, 62, 50);
-  centered("9001:2015", LEFT + sideCx, captionTop - 11, sansBold, 9, NAVY, 0.8);
-  centered("CERTIFIED INSTITUTE", LEFT + sideCx, captionTop, sansBold, 6.2, NAVY, 0.6);
-
-  // emblem (right)
-  if (emblem) {
-    drawImg(emblem, RIGHT - sideCx, headTop - 2, 44, 70);
-    centered("UDYAM REGISTERED", RIGHT - sideCx, captionTop, sansBold, 6.2, NAVY, 0.6);
-  } else {
-    centered("UDYAM", RIGHT - sideCx, headTop + 36, sansBold, 12, NAVY, 1);
-    centered("REGISTERED", RIGHT - sideCx, captionTop, sansBold, 6.2, NAVY, 0.6);
-  }
+  const isoBadgeW = 110;
+  const isoSideCx = LEFT + isoBadgeW / 2;
+  drawImg(isoBadge, isoSideCx, headTop - 2, isoBadgeW, 84);
+  drawImg(udyamBadge, W - isoSideCx, headTop - 2, isoBadgeW, 84);
 
   const afterHeader = headTop + Math.max(logoSize.h, 78) + 12; // ~138
   ornament(W / 2, afterHeader, 250);
@@ -319,37 +302,34 @@ export async function generateCertificatePdf(input: CertificatePdfInput): Promis
   hline(LEFT, RIGHT, 523, 0.6, GOLD);
 
   const stripBase = 549; // baseline of the main registration text
-  const stripMid = 543; // vertical centre of the icons
   const stripSize = 7.6;
-  const iconH = 20;
-  const items: { icon?: PDFImage; text: string; above?: string }[] = [
-    { icon: iso, above: "9001:2015", text: `ISO No: ${INSTITUTE.isoNo}` },
-    { text: `Udyam Reg. No: ${INSTITUTE.udyamNo}` },
-    { icon: tm, text: `TM No: ${INSTITUTE.tmNo}` },
-  ];
+  const udyamH = 38; // Udyam badge height (fits between the rule and the border)
+  const udyamTop = 525;
+  const isoText = `ISO No: ${INSTITUTE.isoNo}`;
+  const tmText = `TM No: ${INSTITUTE.tmNo}`;
+  const tmIcon = imgFit(tm, 44, 20);
+  const udyam = imgFit(udyamBadge, 120, udyamH);
+
+  const isoW = textW(isoText, sansBold, stripSize, 0.4);
   const gap = 34;
-  const iconGap = 6;
-  const widths = items.map((it) => {
-    const iw = it.icon ? imgFit(it.icon, 44, iconH).w + iconGap : 0;
-    return iw + textW(it.text, sansBold, stripSize, 0.4);
-  });
-  const total = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
-  let x = (W - total) / 2;
-  items.forEach((it, i) => {
-    if (it.icon) {
-      const { w, h } = imgFit(it.icon, 44, iconH);
-      page.drawImage(it.icon, { x, y: Y(stripMid + h / 2), width: w, height: h });
-      x += w + iconGap;
-    }
-    const tw = textW(it.text, sansBold, stripSize, 0.4);
-    if (it.above) centered(it.above, x + tw / 2, stripBase - 10.5, sansBold, 8.2, NAVY, 0.8);
-    textAt(it.text, x, stripBase, sansBold, stripSize, NAVY, 0.4);
-    x += tw;
-    if (i < items.length - 1) {
-      diamond(x + gap / 2, stripBase - 2.5, 2.2);
-      x += gap;
-    }
-  });
+  const siteText = "apluscomputerclasses.co.in";
+  const siteW = textW(siteText, sansBold, stripSize, 0.4);
+  const siteX = W / 2 - siteW / 2;
+
+  // Website (exact centre)
+  textAt(siteText, siteX, stripBase, sansBold, stripSize, NAVY, 0.4);
+
+  // ISO No (left of website)
+  const isoX = siteX - gap - isoW;
+  centered("9001:2015", isoX + isoW / 2, stripBase - 10.5, sansBold, 8.2, NAVY, 0.8);
+  textAt(isoText, isoX, stripBase, sansBold, stripSize, NAVY, 0.4);
+  diamond(siteX - gap / 2, stripBase - 2.5, 2.2);
+
+  // TM icon + number (right of website)
+  const tmX = siteX + siteW + gap;
+  diamond(siteX + siteW + gap / 2, stripBase - 2.5, 2.2);
+  page.drawImage(tm, { x: tmX, y: Y(543 + tmIcon.h / 2), width: tmIcon.w, height: tmIcon.h });
+  textAt(tmText, tmX + tmIcon.w + 6, stripBase, sansBold, stripSize, NAVY, 0.4);
 
   return doc.save();
 }
